@@ -340,12 +340,14 @@ function Block3({ formData, update, contact }: BlockProps) {
       <Field
         label="Genannte Feature-Wünsche"
         question="Welche konkreten Features oder Verbesserungen wurden genannt?"
+        hint="Kategorien aufklappen und passende Items auswählen. Suche durchsucht alle Kategorien."
       >
         <ChipMultiSelect
           value={formData.genannteFeatureWuensche}
           onChange={(v) => update("genannteFeatureWuensche", v)}
           options={[...DROPDOWN_OPTIONS.genannteFeatureWuensche]}
           searchable
+          grouped
         />
       </Field>
       <Field
@@ -375,12 +377,32 @@ function Block4({ formData, update, contact }: BlockProps) {
         />
       </Field>
       <Field
+        label="Setup-Bewertung — Begründung"
+        hint="Optional: 1–2 Sätze zur Bewertung. Was hat den Setup-Eindruck geprägt?"
+      >
+        <Textarea
+          value={formData.setupBewertungFreitext}
+          onChange={(v) => update("setupBewertungFreitext", v)}
+          rows={3}
+        />
+      </Field>
+      <Field
         label="Support-Bewertung"
         hint={`Wie zufrieden war ${contact} mit dem Customer Support während des Events?`}
       >
         <RatingChips
           value={formData.supportBewertung}
           onChange={(v) => update("supportBewertung", v)}
+        />
+      </Field>
+      <Field
+        label="Support-Bewertung — Begründung"
+        hint="Optional: 1–2 Sätze zur Bewertung. Was war beim Support auffällig?"
+      >
+        <Textarea
+          value={formData.supportBewertungFreitext}
+          onChange={(v) => update("supportBewertungFreitext", v)}
+          rows={3}
         />
       </Field>
     </>

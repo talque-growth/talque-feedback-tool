@@ -285,7 +285,11 @@ export async function fetchDealDetails(dealId: string): Promise<DealDetails> {
       featureWuenscheWortlaut:
         p[HUBSPOT_PROPERTIES.featureWuenscheWortlaut] ?? "",
       setupBewertung: p[HUBSPOT_PROPERTIES.setupBewertung] ?? "",
+      setupBewertungFreitext:
+        p[HUBSPOT_PROPERTIES.setupBewertungFreitext] ?? "",
       supportBewertung: p[HUBSPOT_PROPERTIES.supportBewertung] ?? "",
+      supportBewertungFreitext:
+        p[HUBSPOT_PROPERTIES.supportBewertungFreitext] ?? "",
       folgeEventGeplant: p[HUBSPOT_PROPERTIES.folgeEventGeplant] ?? "",
       naechstesEventDatum: p[HUBSPOT_PROPERTIES.naechstesEventDatum] ?? "",
       naechstesEventDatumUnsicher: boolVal(
@@ -361,7 +365,12 @@ export function buildHubSpotPayload(formData: FeedbackFormData): Record<string, 
     formData.featureWuenscheWortlaut,
   );
   set(HUBSPOT_PROPERTIES.setupBewertung, formData.setupBewertung);
+  set(HUBSPOT_PROPERTIES.setupBewertungFreitext, formData.setupBewertungFreitext);
   set(HUBSPOT_PROPERTIES.supportBewertung, formData.supportBewertung);
+  set(
+    HUBSPOT_PROPERTIES.supportBewertungFreitext,
+    formData.supportBewertungFreitext,
+  );
   set(HUBSPOT_PROPERTIES.folgeEventGeplant, formData.folgeEventGeplant);
 
   if (

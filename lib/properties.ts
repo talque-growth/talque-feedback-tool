@@ -37,7 +37,9 @@ export const HUBSPOT_PROPERTIES = {
 
   // Block 4: Bewertung Operations
   setupBewertung: 'setupbewertung',                                   // enumeration (1-5)
+  setupBewertungFreitext: 'setupbewertung_freitext',                  // string (multi-line)
   supportBewertung: 'supportbewertung',                               // enumeration (1-5)
+  supportBewertungFreitext: 'supportbewertung_freitext',              // string (multi-line)
 
   // Block 5: Zukunftsausblick
   folgeEventGeplant: 'folgeevent_geplant',                            // enumeration
@@ -258,7 +260,9 @@ export type FeedbackFormData = {
 
   // Block 4
   setupBewertung: string;
+  setupBewertungFreitext: string;
   supportBewertung: string;
+  supportBewertungFreitext: string;
 
   // Block 5
   folgeEventGeplant: string;
