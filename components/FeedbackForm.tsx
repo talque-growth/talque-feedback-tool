@@ -464,6 +464,7 @@ function Block3({ formData, update, contact, importStatus, importNotes }: BlockP
           options={[...DROPDOWN_OPTIONS.genannteFeatureWuensche]}
           searchable
           grouped
+          collapsible
         />
       </Field>
       <Field

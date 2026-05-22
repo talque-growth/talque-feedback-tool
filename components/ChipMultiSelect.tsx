@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 
 type Option = { label: string; value: string };
 
@@ -12,6 +12,7 @@ export function ChipMultiSelect({
   options,
   searchable = false,
   grouped = false,
+  collapsible = false,
 }: {
   value: string[];
   onChange: (v: string[]) => void;
@@ -19,8 +20,13 @@ export function ChipMultiSelect({
   searchable?: boolean;
   /** Groups options by the prefix before " — " (e.g. "Sessions — Bulk-Upload"). */
   grouped?: boolean;
+  /** Versteckt die Kategorien-Liste hinter einem Toggle. Beim Tippen in
+   * die Suche klappt sie automatisch auf. Bereits ausgewählte Optionen
+   * bleiben als entfernbare Chips sichtbar. */
+  collapsible?: boolean;
 }) {
   const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState(false);
 
   const filtered = useMemo(() => {
     if (!searchable || !query.trim()) return options;
@@ -32,6 +38,24 @@ export function ChipMultiSelect({
     if (value.includes(v)) onChange(value.filter((x) => x !== v));
     else onChange([...value, v]);
   };
+
+  const selectedOptions = useMemo(
+    () => options.filter((o) => value.includes(o.value)),
+    [options, value],
+  );
+
+  const isFiltering = query.trim().length > 0;
+  const showCategoryList = !collapsible || expanded || isFiltering;
+
+  const groupCount = useMemo(() => {
+    if (!grouped) return 0;
+    const set = new Set<string>();
+    for (const o of options) {
+      const sep = o.label.indexOf(" — ");
+      set.add(sep === -1 ? "Sonstiges" : o.label.slice(0, sep).trim());
+    }
+    return set.size;
+  }, [grouped, options]);
 
   return (
     <div className="space-y-3">
@@ -48,20 +72,89 @@ export function ChipMultiSelect({
         </div>
       )}
 
-      {grouped ? (
-        <GroupedChips
-          options={filtered}
-          value={value}
-          onToggle={toggle}
-          query={query}
+      {collapsible && selectedOptions.length > 0 && (
+        <SelectedChips
+          options={selectedOptions}
+          onRemove={(v) => onChange(value.filter((x) => x !== v))}
         />
-      ) : (
-        <FlatChips options={filtered} value={value} onToggle={toggle} query={query} />
       )}
 
-      {value.length > 0 && (
+      {collapsible && !showCategoryList && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="flex w-full items-center justify-between gap-3 rounded-xl border border-dashed border-smoke bg-white px-4 py-3 text-left text-[13px] text-ash transition hover:border-brand-purple/40 hover:text-brand-dark"
+        >
+          <span>
+            {options.length} Optionen
+            {grouped ? ` in ${groupCount} Kategorien` : ""} anzeigen
+          </span>
+          <ChevronDown className="h-4 w-4" />
+        </button>
+      )}
+
+      {showCategoryList && (
+        <>
+          {grouped ? (
+            <GroupedChips
+              options={filtered}
+              value={value}
+              onToggle={toggle}
+              query={query}
+            />
+          ) : (
+            <FlatChips options={filtered} value={value} onToggle={toggle} query={query} />
+          )}
+          {collapsible && !isFiltering && (
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="flex items-center gap-1 text-[12px] text-ash transition hover:text-brand-dark"
+            >
+              <ChevronUp className="h-3 w-3" />
+              Kategorien verbergen
+            </button>
+          )}
+        </>
+      )}
+
+      {!collapsible && value.length > 0 && (
         <p className="text-[12px] text-ash">{value.length} ausgewählt</p>
       )}
+    </div>
+  );
+}
+
+function SelectedChips({
+  options,
+  onRemove,
+}: {
+  options: Option[];
+  onRemove: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-xl border border-brand-purple/20 bg-brand-purple/5 px-3 py-2.5">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-brand-purple">
+        {options.length} ausgewählt
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((o) => (
+          <span
+            key={o.value}
+            className="inline-flex items-center gap-1 rounded-chip border border-brand-purple bg-white px-2.5 py-1 text-[12px] text-brand-dark"
+          >
+            <span>{o.label}</span>
+            <button
+              type="button"
+              onClick={() => onRemove(o.value)}
+              className="text-ash transition hover:text-brand-purple"
+              aria-label={`${o.label} entfernen`}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
