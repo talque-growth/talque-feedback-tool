@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import type { ImportFieldStatus } from "@/lib/krispParser";
 
 export function Field({
   label,
@@ -8,6 +9,8 @@ export function Field({
   question,
   children,
   className,
+  importStatus,
+  importNote,
 }: {
   label: string;
   hint?: string;
@@ -15,6 +18,8 @@ export function Field({
   question?: string;
   children: ReactNode;
   className?: string;
+  importStatus?: ImportFieldStatus;
+  importNote?: string;
 }) {
   return (
     <div className={cn("space-y-2", className)}>
@@ -23,13 +28,56 @@ export function Field({
           {label}
           {required && <span className="ml-1 text-brand-purple">*</span>}
         </label>
+        {importStatus && <ImportBadge status={importStatus} />}
       </div>
       {question && (
         <p className="text-[15px] font-medium text-brand-dark">{question}</p>
       )}
       {children}
+      {importNote && (
+        <p
+          className={cn(
+            "text-[13px]",
+            importStatus === "missing"
+              ? "text-red-600"
+              : importStatus === "review"
+                ? "text-amber-700"
+                : "text-ash",
+          )}
+        >
+          {importNote}
+        </p>
+      )}
       {hint && <p className="text-[13px] text-ash">{hint}</p>}
     </div>
+  );
+}
+
+function ImportBadge({ status }: { status: ImportFieldStatus }) {
+  const map: Record<ImportFieldStatus, { label: string; cls: string }> = {
+    parsed: {
+      label: "✓ aus Krisp",
+      cls: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+    },
+    review: {
+      label: "⚠ bitte prüfen",
+      cls: "bg-amber-50 text-amber-800 border border-amber-200",
+    },
+    missing: {
+      label: "✗ nicht erkannt",
+      cls: "bg-red-50 text-red-700 border border-red-200",
+    },
+  };
+  const { label, cls } = map[status];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide",
+        cls,
+      )}
+    >
+      {label}
+    </span>
   );
 }
 

@@ -27,8 +27,13 @@ import {
 } from "./Field";
 import { NPSSlider } from "./NPSSlider";
 import { ChipMultiSelect } from "./ChipMultiSelect";
+import { TranscriptImporter, type ParseSummary } from "./TranscriptImporter";
+import type { ImportFieldStatus } from "@/lib/krispParser";
 
 const TOTAL_BLOCKS = 6;
+
+type FieldStatusMap = Partial<Record<keyof FeedbackFormData, ImportFieldStatus>>;
+type FieldNoteMap = Partial<Record<keyof FeedbackFormData, string>>;
 
 function mergeWithDeal(deal: DealDetails): FeedbackFormData {
   const base = emptyFormData();
@@ -68,6 +73,9 @@ export function FeedbackForm({
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const skipNextSave = useRef(true);
+  const [importStatus, setImportStatus] = useState<FieldStatusMap>({});
+  const [importNotes, setImportNotes] = useState<FieldNoteMap>({});
+  const [importSummary, setImportSummary] = useState<ParseSummary | null>(null);
 
   // On mount: prefer draft from localStorage over server data
   useEffect(() => {
@@ -105,6 +113,53 @@ export function FeedbackForm({
   const update = useCallback(
     <K extends keyof FeedbackFormData>(key: K, value: FeedbackFormData[K]) => {
       setFormData((prev) => ({ ...prev, [key]: value }));
+      // Manuelle Eingaben löschen das Import-Badge des betreffenden Feldes.
+      setImportStatus((prev) => {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      setImportNotes((prev) => {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    },
+    [],
+  );
+
+  const applyImport = useCallback(
+    (
+      data: Partial<FeedbackFormData>,
+      status: FieldStatusMap,
+      notes: FieldNoteMap,
+    ) => {
+      setFormData((prev) => {
+        const next = { ...prev };
+        for (const k of Object.keys(data) as Array<keyof FeedbackFormData>) {
+          const v = data[k];
+          if (v === undefined) continue;
+          // Typ-Erhalt: Krisp-Parser liefert genau die Typen aus FeedbackFormData.
+          (next as Record<string, unknown>)[k] = v;
+        }
+        return next;
+      });
+      setImportStatus(status);
+      setImportNotes(notes);
+      let parsed = 0,
+        review = 0,
+        missing = 0;
+      for (const s of Object.values(status)) {
+        if (s === "parsed") parsed++;
+        else if (s === "review") review++;
+        else if (s === "missing") missing++;
+      }
+      setImportSummary({ parsed, review, missing, attempted: parsed + review + missing });
+      // Spring zum ersten Block mit Review/Missing-Hinweisen
+      const firstIssueBlock = findFirstIssueBlock(status);
+      if (firstIssueBlock !== null) setBlock(firstIssueBlock);
     },
     [],
   );
@@ -168,17 +223,22 @@ export function FeedbackForm({
 
   return (
     <div className="mt-6 space-y-6">
+      <TranscriptImporter
+        formData={formData}
+        onApply={applyImport}
+        lastSummary={importSummary}
+      />
       <DealContextCard deal={deal} portalId={portalId} uiDomain={uiDomain} />
       <ProgressBar current={block} total={TOTAL_BLOCKS} />
       <div className="rounded-card border border-smoke bg-white p-7 shadow-card">
         <BlockHeader block={block} />
         <div className="mt-6 space-y-7">
-          {block === 1 && <Block1 formData={formData} update={update} contact={contact} />}
-          {block === 2 && <Block2 formData={formData} update={update} contact={contact} />}
-          {block === 3 && <Block3 formData={formData} update={update} contact={contact} />}
-          {block === 4 && <Block4 formData={formData} update={update} contact={contact} />}
-          {block === 5 && <Block5 formData={formData} update={update} contact={contact} />}
-          {block === 6 && <Block6 formData={formData} update={update} contact={contact} company={deal.companyName} />}
+          {block === 1 && <Block1 formData={formData} update={update} contact={contact} importStatus={importStatus} importNotes={importNotes} />}
+          {block === 2 && <Block2 formData={formData} update={update} contact={contact} importStatus={importStatus} importNotes={importNotes} />}
+          {block === 3 && <Block3 formData={formData} update={update} contact={contact} importStatus={importStatus} importNotes={importNotes} />}
+          {block === 4 && <Block4 formData={formData} update={update} contact={contact} importStatus={importStatus} importNotes={importNotes} />}
+          {block === 5 && <Block5 formData={formData} update={update} contact={contact} importStatus={importStatus} importNotes={importNotes} />}
+          {block === 6 && <Block6 formData={formData} update={update} contact={contact} company={deal.companyName} importStatus={importStatus} importNotes={importNotes} />}
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-4 px-1">
@@ -237,15 +297,55 @@ type BlockProps = {
   formData: FeedbackFormData;
   update: <K extends keyof FeedbackFormData>(key: K, v: FeedbackFormData[K]) => void;
   contact: string;
+  importStatus: FieldStatusMap;
+  importNotes: FieldNoteMap;
 };
 
-function Block1({ formData, update, contact }: BlockProps) {
+// Map: jedes formData-Feld → Block-Nummer, in dem es lebt.
+const FIELD_BLOCKS: Partial<Record<keyof FeedbackFormData, number>> = {
+  npsScore: 1,
+  gesamtZufriedenheit: 1,
+  erwartungErfuellt: 1,
+  groesserWertAusEvent: 2,
+  wasLiefBesondersGut: 2,
+  groesstesProblem: 3,
+  woVerbesserungsbedarf: 3,
+  welchesProblemUngeloest: 3,
+  genannteFeatureWuensche: 3,
+  featureWuenscheWortlaut: 3,
+  setupBewertung: 4,
+  setupBewertungFreitext: 4,
+  supportBewertung: 4,
+  supportBewertungFreitext: 4,
+  folgeEventGeplant: 5,
+  naechstesEventDatum: 5,
+  naechstesEventAnmerkung: 5,
+  rebookingWahrscheinlichkeit: 5,
+  rebookingHurdle: 5,
+  wortlautZitat: 6,
+  alsReferenzNennbar: 6,
+};
+
+function findFirstIssueBlock(status: FieldStatusMap): number | null {
+  let min: number | null = null;
+  for (const [key, s] of Object.entries(status)) {
+    if (s === "review" || s === "missing") {
+      const b = FIELD_BLOCKS[key as keyof FeedbackFormData];
+      if (b !== undefined && (min === null || b < min)) min = b;
+    }
+  }
+  return min;
+}
+
+function Block1({ formData, update, contact, importStatus, importNotes }: BlockProps) {
   return (
     <>
       <Field
         label="NPS-Score"
         required
         question={`Wie wahrscheinlich würde ${contact} talque einem Kollegen empfehlen?`}
+        importStatus={importStatus.npsScore}
+        importNote={importNotes.npsScore}
       >
         <NPSSlider value={formData.npsScore} onChange={(v) => update("npsScore", v)} />
       </Field>
@@ -253,6 +353,8 @@ function Block1({ formData, update, contact }: BlockProps) {
         label="Gesamt-Zufriedenheit"
         required
         question={`Wie bewertet ${contact} das Event als Gesamterlebnis?`}
+        importStatus={importStatus.gesamtZufriedenheit}
+        importNote={importNotes.gesamtZufriedenheit}
       >
         <Select
           value={formData.gesamtZufriedenheit}
@@ -263,6 +365,8 @@ function Block1({ formData, update, contact }: BlockProps) {
       <Field
         label="Erwartung erfüllt?"
         question="Hat talque die ursprünglichen Erwartungen erfüllt?"
+        importStatus={importStatus.erwartungErfuellt}
+        importNote={importNotes.erwartungErfuellt}
       >
         <ChipSingleSelect
           value={formData.erwartungErfuellt}
@@ -274,13 +378,15 @@ function Block1({ formData, update, contact }: BlockProps) {
   );
 }
 
-function Block2({ formData, update, contact }: BlockProps) {
+function Block2({ formData, update, contact, importStatus, importNotes }: BlockProps) {
   return (
     <>
       <Field
         label="Größter Wert aus Event"
         required
         question="Wo hat talque den größten Wert geliefert? (Mehrfachauswahl möglich)"
+        importStatus={importStatus.groesserWertAusEvent}
+        importNote={importNotes.groesserWertAusEvent}
       >
         <ChipMultiSelect
           value={formData.groesserWertAusEvent}
@@ -291,6 +397,8 @@ function Block2({ formData, update, contact }: BlockProps) {
       <Field
         label="Was lief besonders gut?"
         hint={`Notiere konkrete Punkte, die ${contact} positiv hervorgehoben hat.`}
+        importStatus={importStatus.wasLiefBesondersGut}
+        importNote={importNotes.wasLiefBesondersGut}
       >
         <Textarea
           value={formData.wasLiefBesondersGut}
@@ -302,13 +410,15 @@ function Block2({ formData, update, contact }: BlockProps) {
   );
 }
 
-function Block3({ formData, update, contact }: BlockProps) {
+function Block3({ formData, update, contact, importStatus, importNotes }: BlockProps) {
   return (
     <>
       <Field
         label="Größtes Problem"
         required
         question="Wo lag der größte Reibungspunkt? (Mehrfachauswahl möglich)"
+        importStatus={importStatus.groesstesProblem}
+        importNote={importNotes.groesstesProblem}
       >
         <ChipMultiSelect
           value={formData.groesstesProblem}
@@ -319,6 +429,8 @@ function Block3({ formData, update, contact }: BlockProps) {
       <Field
         label="Wo Verbesserungsbedarf?"
         hint="Notiere konkrete Verbesserungs-Wünsche."
+        importStatus={importStatus.woVerbesserungsbedarf}
+        importNote={importNotes.woVerbesserungsbedarf}
       >
         <Textarea
           value={formData.woVerbesserungsbedarf}
@@ -330,6 +442,8 @@ function Block3({ formData, update, contact }: BlockProps) {
         label="Welches Problem haben wir nicht gelöst?"
         required
         hint="Was war der Kern-Pain, den talque nicht oder nur teilweise adressieren konnte?"
+        importStatus={importStatus.welchesProblemUngeloest}
+        importNote={importNotes.welchesProblemUngeloest}
       >
         <Textarea
           value={formData.welchesProblemUngeloest}
@@ -341,6 +455,8 @@ function Block3({ formData, update, contact }: BlockProps) {
         label="Genannte Feature-Wünsche"
         question="Welche konkreten Features oder Verbesserungen wurden genannt?"
         hint="Kategorien aufklappen und passende Items auswählen. Suche durchsucht alle Kategorien."
+        importStatus={importStatus.genannteFeatureWuensche}
+        importNote={importNotes.genannteFeatureWuensche}
       >
         <ChipMultiSelect
           value={formData.genannteFeatureWuensche}
@@ -353,6 +469,8 @@ function Block3({ formData, update, contact }: BlockProps) {
       <Field
         label="Konkrete Feature-Wünsche (Wortlaut)"
         hint={`Was hat ${contact} konkret gesagt? Originalzitat, kein Marketing-Sprech.`}
+        importStatus={importStatus.featureWuenscheWortlaut}
+        importNote={importNotes.featureWuenscheWortlaut}
       >
         <Textarea
           value={formData.featureWuenscheWortlaut}
@@ -364,12 +482,14 @@ function Block3({ formData, update, contact }: BlockProps) {
   );
 }
 
-function Block4({ formData, update, contact }: BlockProps) {
+function Block4({ formData, update, contact, importStatus, importNotes }: BlockProps) {
   return (
     <>
       <Field
         label="Setup-Bewertung"
         hint={`Wie zufrieden war ${contact} mit dem Onboarding / Setup?`}
+        importStatus={importStatus.setupBewertung}
+        importNote={importNotes.setupBewertung}
       >
         <RatingChips
           value={formData.setupBewertung}
@@ -379,6 +499,8 @@ function Block4({ formData, update, contact }: BlockProps) {
       <Field
         label="Setup-Bewertung — Begründung"
         hint="Optional: 1–2 Sätze zur Bewertung. Was hat den Setup-Eindruck geprägt?"
+        importStatus={importStatus.setupBewertungFreitext}
+        importNote={importNotes.setupBewertungFreitext}
       >
         <Textarea
           value={formData.setupBewertungFreitext}
@@ -389,6 +511,8 @@ function Block4({ formData, update, contact }: BlockProps) {
       <Field
         label="Support-Bewertung"
         hint={`Wie zufrieden war ${contact} mit dem Customer Support während des Events?`}
+        importStatus={importStatus.supportBewertung}
+        importNote={importNotes.supportBewertung}
       >
         <RatingChips
           value={formData.supportBewertung}
@@ -398,6 +522,8 @@ function Block4({ formData, update, contact }: BlockProps) {
       <Field
         label="Support-Bewertung — Begründung"
         hint="Optional: 1–2 Sätze zur Bewertung. Was war beim Support auffällig?"
+        importStatus={importStatus.supportBewertungFreitext}
+        importNote={importNotes.supportBewertungFreitext}
       >
         <Textarea
           value={formData.supportBewertungFreitext}
@@ -409,7 +535,7 @@ function Block4({ formData, update, contact }: BlockProps) {
   );
 }
 
-function Block5({ formData, update }: BlockProps) {
+function Block5({ formData, update, importStatus, importNotes }: BlockProps) {
   const showDate =
     formData.folgeEventGeplant === "ja_fest_geplant" ||
     formData.folgeEventGeplant === "ja_in_diskussion";
@@ -424,7 +550,12 @@ function Block5({ formData, update }: BlockProps) {
 
   return (
     <>
-      <Field label="Folge-Event geplant" required>
+      <Field
+        label="Folge-Event geplant"
+        required
+        importStatus={importStatus.folgeEventGeplant}
+        importNote={importNotes.folgeEventGeplant}
+      >
         <Select
           value={formData.folgeEventGeplant}
           onChange={(v) => update("folgeEventGeplant", v)}
@@ -432,7 +563,11 @@ function Block5({ formData, update }: BlockProps) {
         />
       </Field>
       {showDate && (
-        <Field label="Nächstes Event Datum">
+        <Field
+          label="Nächstes Event Datum"
+          importStatus={importStatus.naechstesEventDatum}
+          importNote={importNotes.naechstesEventDatum}
+        >
           <TextInput
             type="date"
             value={formData.naechstesEventDatum}
@@ -457,6 +592,8 @@ function Block5({ formData, update }: BlockProps) {
         <Field
           label="Nächstes Event Anmerkung"
           hint='Z.B. "wahrscheinlich Q3", "wartet auf Budget-Freigabe", etc.'
+          importStatus={importStatus.naechstesEventAnmerkung}
+          importNote={importNotes.naechstesEventAnmerkung}
         >
           <TextInput
             value={formData.naechstesEventAnmerkung}
@@ -464,7 +601,12 @@ function Block5({ formData, update }: BlockProps) {
           />
         </Field>
       )}
-      <Field label="Re-Booking-Wahrscheinlichkeit" required>
+      <Field
+        label="Re-Booking-Wahrscheinlichkeit"
+        required
+        importStatus={importStatus.rebookingWahrscheinlichkeit}
+        importNote={importNotes.rebookingWahrscheinlichkeit}
+      >
         <Select
           value={formData.rebookingWahrscheinlichkeit}
           onChange={(v) => update("rebookingWahrscheinlichkeit", v)}
@@ -475,6 +617,8 @@ function Block5({ formData, update }: BlockProps) {
         <Field
           label="Re-Booking-Hürde"
           hint="Was ist die größte Hürde für ein Re-Booking? Was müssten wir tun?"
+          importStatus={importStatus.rebookingHurdle}
+          importNote={importNotes.rebookingHurdle}
         >
           <Textarea
             value={formData.rebookingHurdle}
@@ -492,6 +636,8 @@ function Block6({
   update,
   contact,
   company,
+  importStatus,
+  importNotes,
 }: BlockProps & { company: string }) {
   const ref = company || "diesen Kunden";
   return (
@@ -499,6 +645,8 @@ function Block6({
       <Field
         label="Wortlaut-Zitat"
         hint={`Falls ${contact} einen besonders prägnanten Satz gesagt hat — wörtlich notieren. Taugt später als Testimonial oder für Case Studies.`}
+        importStatus={importStatus.wortlautZitat}
+        importNote={importNotes.wortlautZitat}
       >
         <Textarea
           value={formData.wortlautZitat}
@@ -509,6 +657,8 @@ function Block6({
       <Field
         label="Als Referenz nennbar?"
         hint={`Dürfen wir ${ref} als Referenz nennen oder Case Study erstellen?`}
+        importStatus={importStatus.alsReferenzNennbar}
+        importNote={importNotes.alsReferenzNennbar}
       >
         <ChipSingleSelect
           value={formData.alsReferenzNennbar}
