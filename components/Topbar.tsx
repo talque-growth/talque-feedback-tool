@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LogoutButton } from "@/components/LogoutButton";
 
 export function Topbar() {
   return (
@@ -13,7 +14,12 @@ export function Topbar() {
             Post-Event-Feedback
           </span>
         </Link>
-        <div className="text-xs text-ash">Internes Sales-Tool</div>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-xs text-ash sm:block">
+            Internes Sales-Tool
+          </span>
+          <LogoutButton />
+        </div>
       </div>
     </header>
   );
