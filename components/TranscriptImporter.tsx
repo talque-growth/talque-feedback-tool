@@ -71,6 +71,27 @@ export function TranscriptImporter({ formData, onApply, lastSummary }: Props) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
+  // In-App-Bestätigung statt window.confirm(): Letzteres wird vom Browser
+  // unterdrückt, wenn die Seite nicht der aktive Tab ist, und liefert dann
+  // fälschlich `false` zurück — der Import würde lautlos abbrechen.
+  const [pendingResult, setPendingResult] = useState<ParseResult | null>(null);
+
+  const applyResult = (result: ParseResult) => {
+    const summary = summarize(result);
+    onApply(result.data, result.status, result.notes);
+    setWarnings(result.warnings);
+    setPendingResult(null);
+
+    const parts: string[] = [];
+    if (summary.parsed > 0) parts.push(`${summary.parsed} ✓ übertragen`);
+    if (summary.review > 0) parts.push(`${summary.review} ⚠ bitte prüfen`);
+    if (summary.missing > 0) parts.push(`${summary.missing} ✗ nicht erkannt`);
+    toast.success(parts.join(" · "));
+
+    // Eingabe leeren und Box schließen — Status wandert ans Formular
+    setText("");
+    setOpen(false);
+  };
 
   const handleTransfer = () => {
     if (!text.trim()) {
@@ -82,6 +103,7 @@ export function TranscriptImporter({ formData, onApply, lastSummary }: Props) {
     const summary = summarize(result);
 
     if (summary.attempted === 0) {
+      setPendingResult(null);
       setWarnings(
         result.warnings.length > 0
           ? result.warnings
@@ -92,24 +114,12 @@ export function TranscriptImporter({ formData, onApply, lastSummary }: Props) {
     }
 
     if (hasAnyData(formData)) {
-      const ok = window.confirm(
-        "Im Formular sind bereits Antworten eingetragen. Diese werden durch die Krisp-Daten überschrieben, sofern Krisp etwas zu dem jeweiligen Feld liefert. Fortfahren?",
-      );
-      if (!ok) return;
+      // Bestätigung inline einblenden statt blockierendem window.confirm().
+      setPendingResult(result);
+      return;
     }
 
-    onApply(result.data, result.status, result.notes);
-    setWarnings(result.warnings);
-
-    const parts: string[] = [];
-    if (summary.parsed > 0) parts.push(`${summary.parsed} ✓ übertragen`);
-    if (summary.review > 0) parts.push(`${summary.review} ⚠ bitte prüfen`);
-    if (summary.missing > 0) parts.push(`${summary.missing} ✗ nicht erkannt`);
-    toast.success(parts.join(" · "));
-
-    // Eingabe leeren und Box schließen — Status wandert ans Formular
-    setText("");
-    setOpen(false);
+    applyResult(result);
   };
 
   return (
@@ -166,6 +176,28 @@ export function TranscriptImporter({ formData, onApply, lastSummary }: Props) {
               </ul>
             </div>
           )}
+          {pendingResult && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+              <div className="font-medium">
+                Im Formular sind bereits Antworten eingetragen.
+              </div>
+              <p className="mt-1">
+                Diese werden durch die Krisp-Daten überschrieben, sofern Krisp
+                etwas zu dem jeweiligen Feld liefert. Fortfahren?
+              </p>
+              <div className="mt-3 flex gap-2">
+                <Button onClick={() => applyResult(pendingResult)}>
+                  Überschreiben
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => setPendingResult(null)}
+                >
+                  Abbrechen
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="text-[12px] text-ash">
               Felder, die bereits ausgefüllt sind, werden nur überschrieben,
@@ -177,6 +209,7 @@ export function TranscriptImporter({ formData, onApply, lastSummary }: Props) {
                 onClick={() => {
                   setText("");
                   setWarnings([]);
+                  setPendingResult(null);
                 }}
               >
                 Leeren
