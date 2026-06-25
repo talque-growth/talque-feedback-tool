@@ -84,7 +84,11 @@ function splitSections(text: string): Sections {
   for (const raw of lines) {
     const stripped = stripLineDecorations(raw);
     const m = stripped.match(/^(\d)\.\s+(.+)$/);
-    if (m) {
+    // Markdown-Tabellenzeilen (z. B. die "Mapping"-Tabelle am Ende des Krisp-
+    // Outputs: "| 1. Stimmungsbild & NPS | Block 1 | … |") dürfen NICHT als
+    // Section-Header zählen — sonst überschreiben sie die echten Sektionen mit
+    // leerem Inhalt. Echte Header enthalten nie ein "|" im Titel.
+    if (m && !m[2].includes("|")) {
       const num = parseInt(m[1], 10);
       const rest = normalize(m[2]);
       const def = SECTION_DEFS.find(
@@ -139,9 +143,12 @@ function extractFieldBlocks(
       if (fp.regex.test(normalized)) {
         flush();
         currentKey = fp.key;
-        // Wert nach dem ersten Trenner ":" oder "?" in der ORIGINAL-Zeile
+        // Wert nach dem ersten Trenner ":" oder "?" in der ORIGINAL-Zeile.
+        // Führende Markdown-Marker (z. B. das schließende "**" bei
+        // "**Label:** Wert") abstreifen, damit sie nicht in den Wert lecken.
         const sep = stripped.search(/[:?]/);
-        const inline = sep >= 0 ? stripped.slice(sep + 1).trim() : "";
+        const inline =
+          sep >= 0 ? stripped.slice(sep + 1).replace(/^[*\s]+/, "").trim() : "";
         buffer = inline ? [inline] : [];
         matched = true;
         break;
